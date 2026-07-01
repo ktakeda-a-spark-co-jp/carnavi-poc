@@ -347,10 +347,16 @@
 
   function pickCause(btn, side) {
     var group = side === 'start' ? '#start-causes' : '#end-causes';
+    var already = btn.classList.contains('selected');
     document.querySelectorAll(group + ' .cause-btn').forEach(function(b){ b.classList.remove('selected'); });
-    btn.classList.add('selected');
-    if (side === 'start') startCause = btn.textContent;
-    else endCause = btn.textContent;
+    if (!already) {
+      btn.classList.add('selected');
+      if (side === 'start') startCause = btn.textContent;
+      else endCause = btn.textContent;
+    } else {
+      if (side === 'start') startCause = '';
+      else endCause = '';
+    }
   }
 
   async function submitStart() {
@@ -477,8 +483,20 @@
     setTimeout(function(){ t.classList.remove('show'); }, 2200);
   }
 
-  // traffic_logsにsession_idカラムがなければ追加が必要
-  // alter table traffic_logs add column session_id text;
+  async function initStatus() {
+    var result = await db.from('traffic_logs').select('*').order('timestamp', { ascending: false }).limit(1);
+    if (result.data && result.data.length > 0) {
+      var last = result.data[0];
+      if (last.type === 'start') {
+        inJam = true;
+        jamStartTime = new Date(last.timestamp);
+        document.getElementById('btn-end').disabled = false;
+        updateStatus();
+      }
+    }
+  }
+
+  initStatus();
 </script>
 </body>
 </html>
