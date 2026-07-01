@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>渋滞レポーター</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg: #f8f8f7; --surface: #ffffff; --surface-2: #f4f4f2;
+    --border: #e5e5e3; --border-strong: #d0d0cd;
+    --text: #1a1a18; --text-muted: #888884; --text-secondary: #555552;
+    --danger-bg: #fcebeb; --danger-border: #f7c1c1; --danger-text: #a32d2d;
+    --success-bg: #eaf3de; --success-border: #c0dd97; --success-text: #3b6d11;
+    --warning-bg: #faeeda; --warning-border: #fac775; --warning-text: #854f0b;
+    --accent-bg: #e6f1fb; --accent-border: #b5d4f4; --accent-text: #185fa5;
+    --radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a18; --surface: #2c2c2a; --surface-2: #222220;
+      --border: #3a3a38; --border-strong: #4a4a48;
+      --text: #f0f0ee; --text-muted: #666664; --text-secondary: #aaaaaa;
+      --danger-bg: #501313; --danger-border: #791f1f; --danger-text: #f09595;
+      --success-bg: #173404; --success-border: #27500a; --success-text: #97c459;
+      --warning-bg: #412402; --warning-border: #633806; --warning-text: #ef9f27;
+      --accent-bg: #042c53; --accent-border: #185fa5; --accent-text: #85b7eb;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 1.25rem 1rem 4rem; }
+  h1 { font-size: 17px; font-weight: 600; text-align: center; padding: 0.75rem 0 0.25rem; }
+  .subtitle { font-size: 12px; color: var(--text-muted); text-align: center; margin-bottom: 1.25rem; }
+  .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 1.25rem; }
+  .tab { padding: 8px 16px; font-size: 14px; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab.active { color: var(--text); font-weight: 500; border-bottom-color: var(--text); }
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .big-btn { width: 100%; padding: 20px; border-radius: 14px; border: 1px solid; font-size: 17px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; margin-bottom: 10px; transition: transform 0.1s; font-family: inherit; }
+  .big-btn:active { transform: scale(0.97); }
+  .big-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+  .btn-start { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-border); }
+  .btn-end { background: var(--success-bg); color: var(--success-text); border-color: var(--success-border); }
+
+  .gps-bar { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0.875rem 1.125rem; margin-bottom: 10px; }
+  .gps-row { display: flex; align-items: center; justify-content: space-between; }
+  .gps-status { display: flex; align-items: center; gap: 8px; }
+  .gps-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+  .gps-dot.active { background: var(--success-text); box-shadow: 0 0 0 3px var(--success-bg); }
+  .gps-label { font-size: 14px; color: var(--text-secondary); }
+  .gps-speed { font-size: 20px; font-weight: 600; color: var(--text); }
+  .gps-speed span { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+  .gps-meta { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+  .gps-toggle { padding: 8px 14px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text-secondary); font-size: 13px; cursor: pointer; font-family: inherit; white-space: nowrap; }
+  .gps-toggle.recording { background: var(--success-bg); border-color: var(--success-border); color: var(--success-text); }
+  .wakelock-badge { font-size: 11px; color: var(--success-text); margin-top: 4px; display: none; }
+  .wakelock-badge.show { display: block; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.125rem; margin-bottom: 10px; }
+  .card-label { font-size: 12px; color: var(--text-muted); margin-bottom: 10px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+  .retro-btns { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .retro-btn { padding: 10px 4px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text-secondary); font-size: 12px; cursor: pointer; text-align: center; font-family: inherit; }
+  .retro-btn.selected { background: var(--success-bg); border-color: var(--success-border); color: var(--success-text); font-weight: 600; }
+  .cause-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+  .cause-btn { padding: 10px 4px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface-2); color: var(--text-secondary); font-size: 13px; cursor: pointer; text-align: center; font-family: inherit; }
+  .cause-btn.selected { background: var(--warning-bg); border-color: var(--warning-border); color: var(--warning-text); font-weight: 600; }
+  textarea { width: 100%; font-size: 14px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; background: var(--surface-2); color: var(--text); resize: none; font-family: inherit; line-height: 1.5; }
+  textarea::placeholder { color: var(--text-muted); }
+  textarea:focus { outline: none; border-color: var(--border-strong); }
+  .submit-btn { width: 100%; padding: 14px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 15px; font-weight: 500; cursor: pointer; font-family: inherit; transition: transform 0.1s; }
+  .submit-btn:active { transform: scale(0.98); background: var(--surface-2); }
+  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .status-bar { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0.875rem 1.125rem; margin-bottom: 10px; display: flex; align-items: center; gap: 12px; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.jam { background: var(--danger-text); box-shadow: 0 0 0 3px var(--danger-bg); }
+  .status-dot.clear { background: var(--success-text); }
+  .status-text { font-size: 14px; color: var(--text-secondary); }
+  .status-time { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+  .sync-bar { background: var(--accent-bg); border: 1px solid var(--accent-border); border-radius: var(--radius); padding: 8px 12px; margin-bottom: 10px; font-size: 12px; color: var(--accent-text); text-align: center; display: none; }
+  .sync-bar.show { display: block; }
+
+  .log-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.875rem 1rem; display: flex; gap: 12px; align-items: flex-start; margin-bottom: 8px; }
+  .log-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+  .dot-start { background: var(--danger-text); }
+  .dot-end { background: var(--success-text); }
+  .log-body { flex: 1; min-width: 0; }
+  .log-main { font-size: 14px; font-weight: 500; }
+  .log-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+  .log-cause { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning-border); margin-top: 5px; }
+  .log-note { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .log-comment { font-size: 12px; color: var(--accent-text); margin-top: 4px; }
+  .comment-btn { background: none; border: none; color: var(--text-muted); font-size: 12px; cursor: pointer; padding: 4px 0; margin-top: 4px; font-family: inherit; }
+  .comment-area { margin-top: 8px; display: none; }
+  .comment-input { width: 100%; font-size: 13px; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; background: var(--surface-2); color: var(--text); resize: none; font-family: inherit; line-height: 1.5; margin-bottom: 6px; }
+  .comment-input:focus { outline: none; border-color: var(--border-strong); }
+  .comment-save { padding: 6px 14px; border: 1px solid var(--border-strong); border-radius: var(--radius); background: var(--surface); color: var(--text); font-size: 13px; cursor: pointer; font-family: inherit; }
+
+  .empty { text-align: center; padding: 3rem 1rem; color: var(--text-muted); font-size: 14px; line-height: 1.8; }
+  .loading { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 14px; }
+  .export-btn { width: 100%; padding: 12px; border: 1px dashed var(--border-strong); border-radius: var(--radius); background: none; color: var(--text-muted); font-size: 13px; cursor: pointer; font-family: inherit; margin-bottom: 1rem; }
+  .toast { position: fixed; bottom: 2rem; left: 50%; transform: translateX(-50%) translateY(80px); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius); padding: 10px 18px; font-size: 14px; color: var(--text); box-shadow: 0 4px 16px rgba(0,0,0,0.12); transition: transform 0.22s ease; pointer-events: none; z-index: 100; white-space: nowrap; }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>渋滞レポーター</h1>
+  <p class="subtitle">POC用データ収集ツール</p>
+  <div class="sync-bar" id="sync-bar">Supabaseと同期中...</div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('report')">報告する</div>
+    <div class="tab" onclick="switchTab('log')">ログ <span id="log-count"></span></div>
+  </div>
+
+  <div class="panel active" id="panel-report">
+
+    <!-- GPSロガー -->
+    <div class="gps-bar">
+      <div class="gps-row">
+        <div class="gps-status">
+          <div class="gps-dot" id="gps-dot"></div>
+          <div>
+            <div class="gps-label" id="gps-label">GPSロガー 停止中</div>
+            <div class="wakelock-badge" id="wakelock-badge">📱 画面ロック無効中</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div class="gps-speed"><span id="gps-speed">—</span> <span>km/h</span></div>
+          <button class="gps-toggle" id="gps-toggle" onclick="toggleGPS()">開始</button>
+        </div>
+      </div>
+      <div class="gps-meta" id="gps-meta">ロギング開始で自動的に位置情報を記録します</div>
+    </div>
+
+    <!-- 渋滞状況 -->
+    <div class="status-bar">
+      <div class="status-dot clear" id="status-dot"></div>
+      <div>
+        <div class="status-text" id="status-text">渋滞なし</div>
+        <div class="status-time" id="status-time">—</div>
+      </div>
+    </div>
+
+    <button class="big-btn btn-start" onclick="onStartTap()">🔴 渋滞はじまり</button>
+    <button class="big-btn btn-end" id="btn-end" onclick="onEndTap()" disabled>🟢 渋滞おわり</button>
+
+    <!-- 開始詳細 -->
+    <div id="start-panel" style="display:none; margin-top:4px;">
+      <div class="card">
+        <div class="card-label">原因（わかれば）</div>
+        <div class="cause-btns" id="start-causes">
+          <button class="cause-btn" onclick="pickCause(this,'start')">交通量</button>
+          <button class="cause-btn" onclick="pickCause(this,'start')">事故</button>
+          <button class="cause-btn" onclick="pickCause(this,'start')">故障車</button>
+          <button class="cause-btn" onclick="pickCause(this,'start')">工事</button>
+          <button class="cause-btn" onclick="pickCause(this,'start')">料金所</button>
+          <button class="cause-btn" onclick="pickCause(this,'start')">不明</button>
+        </div>
+        <textarea id="start-note" rows="2" placeholder="メモ（任意）"></textarea>
+      </div>
+      <button class="submit-btn" id="start-submit" onclick="submitStart()">渋滞開始を記録する</button>
+    </div>
+
+    <!-- 終了詳細 -->
+    <div id="end-panel" style="display:none; margin-top:4px;">
+      <div class="card">
+        <div class="card-label">いつ終わりましたか？</div>
+        <div class="retro-btns" id="retro-btns">
+          <button class="retro-btn selected" data-min="0" onclick="pickRetro(this)">いま</button>
+          <button class="retro-btn" data-min="3" onclick="pickRetro(this)">3分前</button>
+          <button class="retro-btn" data-min="5" onclick="pickRetro(this)">5分前</button>
+          <button class="retro-btn" data-min="10" onclick="pickRetro(this)">10分前</button>
+          <button class="retro-btn" data-min="15" onclick="pickRetro(this)">15分前</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-label">原因（わかれば）</div>
+        <div class="cause-btns" id="end-causes">
+          <button class="cause-btn" onclick="pickCause(this,'end')">交通量</button>
+          <button class="cause-btn" onclick="pickCause(this,'end')">事故</button>
+          <button class="cause-btn" onclick="pickCause(this,'end')">故障車</button>
+          <button class="cause-btn" onclick="pickCause(this,'end')">工事</button>
+          <button class="cause-btn" onclick="pickCause(this,'end')">料金所</button>
+          <button class="cause-btn" onclick="pickCause(this,'end')">不明</button>
+        </div>
+        <textarea id="end-note" rows="2" placeholder="メモ（任意）"></textarea>
+      </div>
+      <button class="submit-btn" id="end-submit" onclick="submitEnd()">渋滞終了を記録する</button>
+    </div>
+  </div>
+
+  <!-- ログタブ -->
+  <div class="panel" id="panel-log">
+    <button class="export-btn" onclick="exportCSV()">📥 CSVでエクスポート</button>
+    <div id="log-list"><div class="loading">読み込み中...</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  var SUPABASE_URL = 'https://zklixelqoihsprlqfwhl.supabase.co';
+  var SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InprbGl4ZWxxb2loc3BybHFmd2hsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4NzEwMjIsImV4cCI6MjA5ODQ0NzAyMn0.75tGfbKN5olcJS4nqvv__ivLWpZwvsh06ZG1q-h_oaY';
+  var db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  var retroMin = 0;
+  var startCause = '';
+  var endCause = '';
+  var inJam = false;
+  var jamStartTime = null;
+  var logs = [];
+
+  // GPS
+  var gpsWatchId = null;
+  var sessionId = null;
+  var gpsBuffer = [];
+  var gpsFlushTimer = null;
+  var wakeLock = null;
+  var isRecording = false;
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(function(t, i) {
+      t.classList.toggle('active', (i===0&&tab==='report')||(i===1&&tab==='log'));
+    });
+    document.getElementById('panel-report').classList.toggle('active', tab==='report');
+    document.getElementById('panel-log').classList.toggle('active', tab==='log');
+    if (tab==='log') loadLogs();
+  }
+
+  // ===== GPS =====
+  async function toggleGPS() {
+    if (isRecording) {
+      stopGPS();
+    } else {
+      startGPS();
+    }
+  }
+
+  async function startGPS() {
+    if (!navigator.geolocation) { toast('このブラウザはGPSに対応していません'); return; }
+    sessionId = 'session_' + Date.now();
+    isRecording = true;
+    document.getElementById('gps-toggle').textContent = '停止';
+    document.getElementById('gps-toggle').classList.add('recording');
+    document.getElementById('gps-dot').classList.add('active');
+    document.getElementById('gps-label').textContent = 'GPSロガー 記録中';
+    document.getElementById('gps-meta').textContent = 'セッション: ' + sessionId;
+
+    // Wake Lock
+    if ('wakeLock' in navigator) {
+      try {
+        wakeLock = await navigator.wakeLock.request('screen');
+        document.getElementById('wakelock-badge').classList.add('show');
+      } catch(e) {}
+    }
+
+    gpsWatchId = navigator.geolocation.watchPosition(
+      onGpsSuccess, onGpsError,
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+    );
+
+    gpsFlushTimer = setInterval(flushGPS, 10000);
+    toast('GPSロガー開始');
+  }
+
+  function stopGPS() {
+    if (gpsWatchId !== null) {
+      navigator.geolocation.clearWatch(gpsWatchId);
+      gpsWatchId = null;
+    }
+    clearInterval(gpsFlushTimer);
+    flushGPS();
+    isRecording = false;
+    sessionId = null;
+    document.getElementById('gps-toggle').textContent = '開始';
+    document.getElementById('gps-toggle').classList.remove('recording');
+    document.getElementById('gps-dot').classList.remove('active');
+    document.getElementById('gps-label').textContent = 'GPSロガー 停止中';
+    document.getElementById('gps-speed').textContent = '—';
+    document.getElementById('gps-meta').textContent = 'ロギング開始で自動的に位置情報を記録します';
+    document.getElementById('wakelock-badge').classList.remove('show');
+    if (wakeLock) { wakeLock.release(); wakeLock = null; }
+    toast('GPSロガー停止');
+  }
+
+  function onGpsSuccess(pos) {
+    var c = pos.coords;
+    var speedKmh = c.speed !== null ? Math.round(c.speed * 3.6) : null;
+    document.getElementById('gps-speed').textContent = speedKmh !== null ? speedKmh : '—';
+    document.getElementById('gps-meta').textContent =
+      '精度: ' + Math.round(c.accuracy) + 'm  |  ' +
+      c.latitude.toFixed(5) + ', ' + c.longitude.toFixed(5);
+
+    gpsBuffer.push({
+      session_id: sessionId,
+      timestamp: new Date(pos.timestamp).toISOString(),
+      lat: c.latitude,
+      lng: c.longitude,
+      speed: c.speed !== null ? Math.round(c.speed * 3.6 * 10) / 10 : null,
+      accuracy: Math.round(c.accuracy * 10) / 10
+    });
+
+    if (gpsBuffer.length >= 30) flushGPS();
+  }
+
+  function onGpsError(err) {
+    document.getElementById('gps-meta').textContent = 'GPS取得エラー: ' + err.message;
+  }
+
+  async function flushGPS() {
+    if (gpsBuffer.length === 0) return;
+    var batch = gpsBuffer.slice();
+    gpsBuffer = [];
+    await db.from('gps_logs').insert(batch);
+  }
+
+  // ===== 渋滞報告 =====
+  function onStartTap() {
+    document.getElementById('start-panel').style.display = 'block';
+    document.getElementById('end-panel').style.display = 'none';
+    startCause = '';
+    document.querySelectorAll('#start-causes .cause-btn').forEach(function(b){ b.classList.remove('selected'); });
+    document.getElementById('start-note').value = '';
+  }
+
+  function onEndTap() {
+    document.getElementById('end-panel').style.display = 'block';
+    document.getElementById('start-panel').style.display = 'none';
+    retroMin = 0;
+    endCause = '';
+    document.querySelectorAll('#retro-btns .retro-btn').forEach(function(b,i){ b.classList.toggle('selected', i===0); });
+    document.querySelectorAll('#end-causes .cause-btn').forEach(function(b){ b.classList.remove('selected'); });
+    document.getElementById('end-note').value = '';
+  }
+
+  function pickRetro(btn) {
+    document.querySelectorAll('#retro-btns .retro-btn').forEach(function(b){ b.classList.remove('selected'); });
+    btn.classList.add('selected');
+    retroMin = parseInt(btn.dataset.min);
+  }
+
+  function pickCause(btn, side) {
+    var group = side === 'start' ? '#start-causes' : '#end-causes';
+    document.querySelectorAll(group + ' .cause-btn').forEach(function(b){ b.classList.remove('selected'); });
+    btn.classList.add('selected');
+    if (side === 'start') startCause = btn.textContent;
+    else endCause = btn.textContent;
+  }
+
+  async function submitStart() {
+    var btn = document.getElementById('start-submit');
+    btn.disabled = true; showSync();
+    var now = new Date();
+    var row = { type: 'start', timestamp: now.toISOString(), cause: startCause || null, note: document.getElementById('start-note').value.trim() || null, retro_min: 0, session_id: sessionId };
+    var result = await db.from('traffic_logs').insert([row]);
+    hideSync(); btn.disabled = false;
+    if (result.error) { toast('保存に失敗しました'); return; }
+    inJam = true; jamStartTime = now;
+    document.getElementById('btn-end').disabled = false;
+    updateStatus();
+    document.getElementById('start-panel').style.display = 'none';
+    toast('渋滞開始を記録しました');
+  }
+
+  async function submitEnd() {
+    var btn = document.getElementById('end-submit');
+    btn.disabled = true; showSync();
+    var now = new Date();
+    var actual = new Date(now.getTime() - retroMin * 60000);
+    var row = { type: 'end', timestamp: actual.toISOString(), reported_at: now.toISOString(), cause: endCause || null, note: document.getElementById('end-note').value.trim() || null, retro_min: retroMin, session_id: sessionId };
+    var result = await db.from('traffic_logs').insert([row]);
+    hideSync(); btn.disabled = false;
+    if (result.error) { toast('保存に失敗しました'); return; }
+    inJam = false; jamStartTime = null;
+    document.getElementById('btn-end').disabled = true;
+    updateStatus();
+    document.getElementById('end-panel').style.display = 'none';
+    toast(retroMin > 0 ? retroMin + '分前の終了として記録しました' : '渋滞終了を記録しました');
+  }
+
+  // ===== ログ =====
+  async function loadLogs() {
+    document.getElementById('log-list').innerHTML = '<div class="loading">読み込み中...</div>';
+    var result = await db.from('traffic_logs').select('*').order('timestamp', { ascending: false }).limit(100);
+    if (result.error) { document.getElementById('log-list').innerHTML = '<div class="empty">読み込みに失敗しました</div>'; return; }
+    logs = result.data;
+    document.getElementById('log-count').textContent = logs.length > 0 ? '(' + logs.length + ')' : '';
+    renderLogs();
+  }
+
+  function renderLogs() {
+    var list = document.getElementById('log-list');
+    if (logs.length === 0) { list.innerHTML = '<div class="empty">まだ記録がありません</div>'; return; }
+    list.innerHTML = logs.map(function(l) {
+      var isStart = l.type === 'start';
+      var d = new Date(l.timestamp);
+      var dateStr = d.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      var retro = (!isStart && l.retro_min > 0) ? '（' + l.retro_min + '分前に終了）' : '';
+      var causeHtml = l.cause ? '<span class="log-cause">' + l.cause + '</span>' : '';
+      var noteHtml = l.note ? '<div class="log-note">' + l.note + '</div>' : '';
+      var commentHtml = l.comment ? '<div class="log-comment">💬 ' + l.comment + '</div>' : '';
+      return '<div class="log-item">'
+        + '<div class="log-dot ' + (isStart ? 'dot-start' : 'dot-end') + '"></div>'
+        + '<div class="log-body">'
+        + '<div class="log-main">' + (isStart ? '🔴 渋滞はじまり' : '🟢 渋滞おわり') + ' ' + retro + '</div>'
+        + '<div class="log-meta">' + dateStr + '</div>'
+        + causeHtml + noteHtml + commentHtml
+        + '<div class="comment-area" id="ca-' + l.id + '">'
+        + '<textarea class="comment-input" id="ci-' + l.id + '" rows="2" placeholder="コメントを追記...">' + (l.comment||'') + '</textarea>'
+        + '<button class="comment-save" onclick="saveComment(' + l.id + ')">保存</button>'
+        + '</div>'
+        + '<button class="comment-btn" onclick="toggleComment(' + l.id + ')">💬 コメント追記</button>'
+        + '</div></div>';
+    }).join('');
+  }
+
+  function toggleComment(id) {
+    var area = document.getElementById('ca-' + id);
+    area.style.display = area.style.display === 'block' ? 'none' : 'block';
+  }
+
+  async function saveComment(id) {
+    var comment = document.getElementById('ci-' + id).value.trim();
+    showSync();
+    var result = await db.from('traffic_logs').update({ comment: comment || null }).eq('id', id);
+    hideSync();
+    if (result.error) { toast('保存に失敗しました'); return; }
+    document.getElementById('ca-' + id).style.display = 'none';
+    toast('コメントを保存しました');
+    loadLogs();
+  }
+
+  function exportCSV() {
+    if (logs.length === 0) { toast('ログがありません'); return; }
+    var header = 'id,type,timestamp,reported_at,cause,note,retro_min,comment,session_id,created_at';
+    var rows = logs.map(function(l) {
+      return [l.id, l.type, l.timestamp, l.reported_at||'', l.cause||'', '"'+(l.note||'').replace(/"/g,'""')+'"', l.retro_min||0, '"'+(l.comment||'').replace(/"/g,'""')+'"', l.session_id||'', l.created_at].join(',');
+    });
+    var csv = '\uFEFF' + header + '\n' + rows.join('\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'traffic_log_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('CSVをダウンロードしました');
+  }
+
+  function updateStatus() {
+    var dot = document.getElementById('status-dot');
+    var text = document.getElementById('status-text');
+    var time = document.getElementById('status-time');
+    if (inJam && jamStartTime) {
+      dot.className = 'status-dot jam';
+      text.textContent = '渋滞中';
+      time.textContent = '開始 ' + jamStartTime.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    } else {
+      dot.className = 'status-dot clear';
+      text.textContent = '渋滞なし';
+      time.textContent = '—';
+    }
+  }
+
+  function showSync() { document.getElementById('sync-bar').classList.add('show'); }
+  function hideSync() { document.getElementById('sync-bar').classList.remove('show'); }
+  function toast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function(){ t.classList.remove('show'); }, 2200);
+  }
+
+  // traffic_logsにsession_idカラムがなければ追加が必要
+  // alter table traffic_logs add column session_id text;
+</script>
+</body>
+</html>
