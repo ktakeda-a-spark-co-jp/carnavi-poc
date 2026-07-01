@@ -197,7 +197,8 @@
 
   <!-- ログタブ -->
   <div class="panel" id="panel-log">
-    <button class="export-btn" onclick="exportCSV()">📥 CSVでエクスポート</button>
+    <button class="export-btn" onclick="exportCSV()">📥 渋滞ログをCSVエクスポート</button>
+    <button class="export-btn" onclick="exportGPS()">📥 GPSログをCSVエクスポート</button>
     <div id="log-list"><div class="loading">読み込み中...</div></div>
   </div>
 </div>
@@ -440,6 +441,27 @@
     document.getElementById('ca-' + id).style.display = 'none';
     toast('コメントを保存しました');
     loadLogs();
+  }
+
+  async function exportGPS() {
+    showSync();
+    var result = await db.from('gps_logs').select('*').order('timestamp', { ascending: true });
+    hideSync();
+    if (result.error) { toast('取得に失敗しました'); return; }
+    if (result.data.length === 0) { toast('GPSログがありません'); return; }
+    var header = 'id,session_id,timestamp,lat,lng,speed,accuracy,created_at';
+    var rows = result.data.map(function(l) {
+      return [l.id, l.session_id, l.timestamp, l.lat, l.lng, l.speed||'', l.accuracy||'', l.created_at].join(',');
+    });
+    var csv = '\uFEFF' + header + '\n' + rows.join('\n');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'gps_log_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('GPSログをダウンロードしました');
   }
 
   function exportCSV() {
